@@ -1,0 +1,50 @@
+; Options for the Atari Jaguar RISC (TOM GPU / JERRY DSP) port of the compiler.
+;
+; Copyright (C) 2026 Free Software Foundation, Inc.
+;
+; This file is part of GCC.
+;
+; GCC is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation; either version 3, or (at your option) any later
+; version.
+;
+; GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+; WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+; for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with GCC; see the file COPYING3.  If not see
+; <http://www.gnu.org/licenses/>.
+
+HeaderInclude
+config/jrisc/jrisc-opts.h
+
+mcpu=
+Target RejectNegative Joined Enum(jrisc_cpu) Var(jrisc_cpu) Init(JRISC_CPU_GPU)
+-mcpu=CPU	Generate code for the TOM GPU (tom, gpu) or the JERRY DSP (jerry, dsp).
+
+Enum
+Name(jrisc_cpu) Type(enum jrisc_cpu_type)
+Known Jaguar RISC processors (for use with the -mcpu= option):
+
+EnumValue
+Enum(jrisc_cpu) String(gpu) Value(JRISC_CPU_GPU)
+
+EnumValue
+Enum(jrisc_cpu) String(tom) Value(JRISC_CPU_GPU)
+
+EnumValue
+Enum(jrisc_cpu) String(dsp) Value(JRISC_CPU_DSP)
+
+EnumValue
+Enum(jrisc_cpu) String(jerry) Value(JRISC_CPU_DSP)
+
+mgpu
+Target RejectNegative Alias(mcpu=, gpu)
+Generate code for the TOM GPU.
+
+mdsp
+Target RejectNegative Alias(mcpu=, dsp)
+Generate code for the JERRY DSP.

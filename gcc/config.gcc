@@ -402,6 +402,9 @@ frv*)	cpu_type=frv
 ft32*)	cpu_type=ft32
 	target_has_targetm_common=no
 	;;
+jrisc*)	cpu_type=jrisc
+	target_has_targetm_common=no
+	;;
 moxie*)	cpu_type=moxie
 	target_has_targetm_common=no
 	;;
@@ -1802,6 +1805,13 @@ ft32-*-elf)
 	gnu_ld=yes
 	tm_file="elfos.h newlib-stdint.h ${tm_file}"
 	tmake_file="${tmake_file} ft32/t-ft32"
+	;;
+jrisc-*-elf*)
+	gas=yes
+	gnu_ld=yes
+	tm_file="elfos.h newlib-stdint.h ${tm_file}"
+	tmake_file="${tmake_file} jrisc/t-jrisc"
+	gcc_cv_initfini_array=yes
 	;;
 amdgcn-*-amdhsa)
 	tm_file="elfos.h gcn/gcn-hsa.h gcn/gcn.h newlib-stdint.h ./gcn-device-macros.h"

@@ -2785,6 +2785,40 @@ now roughly the same as @samp{m} when not used together with @samp{<}
 or @samp{>}.
 @end table
 
+@item Jaguar RISC---@file{config/jrisc/constraints.md}
+@table @code
+@item c
+A register that can hold the target of an indirect call (not @code{r15},
+@code{r28} or @code{r29}).
+
+@item I
+An unsigned 5-bit constant (0 @dots{} 31).
+
+@item J
+A shift count (1 @dots{} 31).
+
+@item K
+A constant for @code{addq} and @code{subq} (1 @dots{} 32).
+
+@item L
+A signed 5-bit constant for @code{cmpq} (@minus{}16 @dots{} 15).
+
+@item M
+A mask of 1 to 31 low-order ones.
+
+@item N
+A constant in the range @minus{}32 @dots{} @minus{}1.
+
+@item P
+A constant with exactly one bit set.
+
+@item Q
+A constant with exactly one bit clear.
+
+@item S
+A symbolic call target.
+@end table
+
 @item M32C---@file{config/m32c/m32c.cc}
 @table @code
 @item Rsp

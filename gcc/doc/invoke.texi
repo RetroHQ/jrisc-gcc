@@ -1069,6 +1069,9 @@ Objective-C and Objective-C++ Dialects}.
 -msel-sched-dont-check-control-spec  -msched-fp-mem-deps-zero-cost
 -msched-max-memory-insns-hard-limit  -msched-max-memory-insns=@var{max-insns}}
 
+@emph{Jaguar RISC Options} (@ref{Jaguar RISC Options})
+@gccoptlist{-mcpu=@var{cpu}  -mgpu  -mdsp}
+
 @emph{LM32 Options} (@ref{LM32 Options})
 @gccoptlist{-mbarrel-shift-enabled  -mdivide-enabled  -mmultiply-enabled
 -msign-extend-enabled  -muser-enabled}
@@ -21414,6 +21417,7 @@ platform.
 * H8/300 Options::
 * HPPA Options::
 * IA-64 Options::
+* Jaguar RISC Options::
 * LM32 Options::
 * LoongArch Options::
 * M32C Options::
@@ -27388,6 +27392,39 @@ Otherwise, the limit is ``soft'', meaning that non-memory operations
 are preferred when the limit is reached, but memory operations may still
 be scheduled.
 
+@end table
+
+@node Jaguar RISC Options
+@subsection Atari Jaguar RISC Options
+@cindex Jaguar RISC options
+@cindex TOM options
+@cindex JERRY options
+
+These options are defined for the RISC processors of the Atari Jaguar:
+the graphics processor (GPU) in TOM and the digital signal processor
+(DSP) in JERRY.  The processors' local RAM can only be accessed a word
+at a time: byte and halfword loads there return the whole long, and
+byte and halfword stores overwrite it.  The compiler uses byte and
+halfword accesses for @code{char} and @code{short} data, so the stack
+and any data accessed that way must be in main RAM.  The startup code
+puts the stack at the top of main RAM (@code{0x200000} for the GPU,
+@code{0x1f8000} for the DSP) unless the program defines @code{__stack}.
+
+@table @gcctabopt
+@opindex mcpu
+@item -mcpu=@var{cpu}
+Generate code for @var{cpu}: @samp{gpu} or @samp{tom} for the TOM
+graphics processor (the default), @samp{dsp} or @samp{jerry} for the
+JERRY digital signal processor.  The two processors' objects cannot be
+linked together, so the libraries are built for each.
+
+@opindex mgpu
+@item -mgpu
+The same as @option{-mcpu=gpu}.
+
+@opindex mdsp
+@item -mdsp
+The same as @option{-mcpu=dsp}.
 @end table
 
 @node LM32 Options

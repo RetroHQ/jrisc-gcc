@@ -123,6 +123,8 @@ frv*)	cpu_type=frv
 	;;
 ft32*)	cpu_type=ft32
 	;;
+jrisc*)	cpu_type=jrisc
+	;;
 moxie*)	cpu_type=moxie
 	;;
 i[34567]86-*-*)
@@ -688,6 +690,10 @@ frv-*-*linux*)
 ft32-*-elf)
 	tmake_file="ft32/t-ft32 t-softfp-sfdf t-softfp-excl t-softfp"
 	extra_parts="$extra_parts crti.o crti-hw.o crtn.o"
+	;;
+jrisc-*-elf*)
+	tmake_file="$tmake_file jrisc/t-jrisc t-softfp-sfdf t-softfp-excl t-softfp"
+	extra_parts="crt0.o"
 	;;
 h8300-*-elf*)
 	tmake_file="$tmake_file h8300/t-h8300 t-fpbit"
