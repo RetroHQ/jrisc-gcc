@@ -1070,7 +1070,8 @@ Objective-C and Objective-C++ Dialects}.
 -msched-max-memory-insns-hard-limit  -msched-max-memory-insns=@var{max-insns}}
 
 @emph{Jaguar RISC Options} (@ref{Jaguar RISC Options})
-@gccoptlist{-mcpu=@var{cpu}  -mgpu  -mdsp}
+@gccoptlist{-mcpu=@var{cpu}  -mgpu  -mdsp  -mjaguar-object
+-mlocal-frame-limit=@var{n}  -mfix-dsp-stores  -mno-fix-hazards}
 
 @emph{LM32 Options} (@ref{LM32 Options})
 @gccoptlist{-mbarrel-shift-enabled  -mdivide-enabled  -mmultiply-enabled
@@ -27402,13 +27403,34 @@ be scheduled.
 
 These options are defined for the RISC processors of the Atari Jaguar:
 the graphics processor (GPU) in TOM and the digital signal processor
-(DSP) in JERRY.  The processors' local RAM can only be accessed a word
-at a time: byte and halfword loads there return the whole long, and
-byte and halfword stores overwrite it.  The compiler uses byte and
-halfword accesses for @code{char} and @code{short} data, so the stack
-and any data accessed that way must be in main RAM.  The startup code
-puts the stack at the top of main RAM (@code{0x200000} for the GPU,
-@code{0x1f8000} for the DSP) unless the program defines @code{__stack}.
+(DSP) in JERRY.
+
+The processors can only execute code from their own local RAM (4K on
+the GPU, 8K on the DSP), which can only be accessed a word at a time:
+byte and halfword loads there return the whole long, and byte and
+halfword stores overwrite it with the zero-extended value.  Programs
+that do not fit are split into overlays by the linker, which copies
+them into local RAM as they are called; @pxref{Jaguar RISC Function
+Attributes} for how to control which functions are resident or share
+an overlay.
+
+There are two stacks.  The stack pointer (@code{r15}) is in local RAM,
+by default at its end, and holds only data that is accessed a word at a
+time: saved registers, arguments, spill slots (each in a word of its
+own) and locals whose type has no parts smaller than a word, whose
+address does not escape and which are no bigger than
+@option{-mlocal-frame-limit}.  Other locals, and @code{alloca}, use a
+second stack in main RAM, whose pointer is the fixed register
+@code{r27}; it also holds the overlay manager's return records.
+Aggregates are passed by reference, and the called function makes its
+own copy.
+
+Registers @code{r30} and @code{r31} are reserved for interrupt
+handlers: an interrupt switches to register bank 0 and pushes the
+return address through @code{r31}.  Compiled code, the run-time library
+and the overlay manager never use them, and the startup code does not
+set them; code that enables interrupts must first point @code{r31} at
+an interrupt stack.
 
 @table @gcctabopt
 @opindex mcpu
@@ -27416,7 +27438,9 @@ puts the stack at the top of main RAM (@code{0x200000} for the GPU,
 Generate code for @var{cpu}: @samp{gpu} or @samp{tom} for the TOM
 graphics processor (the default), @samp{dsp} or @samp{jerry} for the
 JERRY digital signal processor.  The two processors' objects cannot be
-linked together, so the libraries are built for each.
+linked together, so the libraries are built for each; a Jaguar program
+links each processor's program separately with @option{-mjaguar-object}
+and then links them with the 68000 code.
 
 @opindex mgpu
 @item -mgpu
@@ -27425,6 +27449,129 @@ The same as @option{-mcpu=gpu}.
 @opindex mdsp
 @item -mdsp
 The same as @option{-mcpu=dsp}.
+
+@opindex mjaguar-object
+@item -mjaguar-object
+When linking, link the program, with its own startup code and
+libraries, as a relocatable 68000 object to be linked with the 68000
+code of a Jaguar program (@command{ld -m m68kjaguar}).  Its global
+symbols are renamed with the prefix @samp{gpu_} or @samp{dsp_}, so that
+the 68000 code refers to @code{main} as @code{gpu_main}, and symbols it
+does not define, such as the 68000 program's variables, are left to be
+resolved by that link; the 68000 code loads it into local RAM and
+starts it with @code{__gpu_image_start}, @code{__gpu_image_end},
+@code{__gpu_image_dest} and @code{__gpu_entry} (@code{__dsp_@dots{}} for
+the DSP).  This passes @option{--jaguar-object} to the linker; use
+@option{-Wl,--jaguar-prefix=@var{prefix}} for another prefix and
+@option{-Wl,--dram-stack-size=@var{bytes}} for the size of the main RAM
+stack.  @xref{Jaguar RISC,,,ld,Using ld}.
+
+The compiler of the @code{m68k-jaguar-elf} configuration compiles the
+68000 code, for a 68000 by default, and links the Jaguar program with
+these objects: for example @samp{m68k-jaguar-elf-gcc -o game.elf
+main.c gpu.o dsp.o}.  It links its startup code and @file{libjaguar},
+which has a few string and memory functions (there is no C library)
+and the functions declared in @file{jaguar.h}; there,
+@code{jag_gpu_start ()} and @code{jag_dsp_start ()} load and start the
+GPU and DSP programs.
+
+When @code{main} of a GPU or DSP program returns, its startup code stops
+the processor and sets @code{CPUINT} in its control register, which
+interrupts the 68000 if it has enabled that interrupt (the GPU's in
+@code{INT1}, the DSP's in @code{JINTCTRL} and Jerry's in @code{INT1}).
+The 68000 can so wait for it with @code{stop} rather than by reading
+the processor's control register, which takes the bus from the
+processors.
+
+@opindex mlocal-frame-limit
+@item -mlocal-frame-limit=@var{n}
+Keep locals of up to @var{n} bytes (64 by default) on the stack in local
+RAM, if they can be; put bigger ones in main RAM.  Local RAM is much
+faster, but there is little of it: the linker keeps 512 bytes for the
+stack on the GPU and 1K on the DSP unless told otherwise with
+@option{--local-stack-size}.
+
+@opindex mfix-hazards
+@opindex mno-fix-hazards
+@item -mfix-hazards
+@itemx -mno-fix-hazards
+Work around three pipeline bugs in Atari's ``TOM and JERRY Bugs List''
+(this is the default).  Each concerns a register that a divide, or a
+load from main RAM, is still to write:
+
+@itemize @bullet
+@item
+TOM bug 2: an indexed store (@code{store @var{rn},(r14+@var{n})},
+@code{(r15+@var{n})}, @code{(r14+@var{rm})} or @code{(r15+@var{rm})})
+does not wait for its data register, and stores the old value of a
+quotient still being computed.
+
+@item
+TOM bug 13: an instruction that writes a register without reading it
+does not wait for a load from main RAM, or a divide, into the same
+register, whose late write then wins.  This happens after a
+@code{volatile} read whose value is not used.
+
+@item
+TOM bug 25: consecutive divides fail.  A divide is not started while
+the previous quotient is unread.
+@end itemize
+
+GCC puts a @code{move @var{rn},@var{rn}} before such an instruction:
+it reads @var{rn}, so it waits for it, and leaves the flags alone.  It
+follows the pending registers through branches; a call waits for those
+that the called function may write, and a function returns with
+nothing pending, its return value included.  Assembly functions called
+from C must keep the same rule.  Loads
+through the stack and frame pointers, from @code{local} variables and
+through @code{__local} pointers are from local RAM, which finish in
+time.  The cost is a cycle or so at the rare places that need it.
+
+The assembler rejects these sequences in straight-line code
+(@option{-mpipeline-hazards}, @pxref{JRISC Options,,, as, Using as}),
+so assembly written by hand, @code{asm} statements included, has to wait
+for the register too.
+
+@opindex mfix-dsp-stores
+@opindex mno-fix-dsp-stores
+@item -mfix-dsp-stores
+@itemx -mno-fix-dsp-stores
+Work around the DSP bug described in Atari's ``Jaguar Hardware Bugs &
+Warnings'' (JDEV0002, GPU/DSP item 7): a long word store to main RAM can
+write the wrong data (its high half in both halves), above all while the
+other processors are busy on the bus.  The DSP is on the main bus 16 bits
+wide, and its word and byte stores do not fail.
+
+A long word store that is known to be to main RAM is made as two
+@code{storew} instructions, the high half shifted into a register
+first: a store to a variable that is not @code{local}, to the frame in
+main RAM, to a constant address below @code{0xf00000}, through a pointer
+that GCC's points-to analysis shows can only point to such objects, and
+to the function's own result returned in memory.  For the last, the
+caller puts the slot for a result returned in memory in main RAM (code
+in assembly that calls such a function must do so too).  Block copies
+and sets in main RAM are made the same way.  A long word store that may
+be to local RAM, which can only be written a long word at a time (a
+store through other pointers), or to a @code{volatile} variable (kept a
+single store), is preceded by a load of the same location into
+@code{r28} and a @code{move r28,r28}, which waits for the load and
+leaves the flags alone; such a store fails much less often, but can
+still fail while the bus is busy.  Stores through the stack and frame
+pointers, to @code{local} variables, through pointers to the
+@code{__local} address space (@pxref{Named Address Spaces}), and to
+constant addresses from @code{0xf00000} up (hardware registers) are left
+alone: declare a pointer that only points to local RAM as
+@code{__local} to avoid its guards.  For a long word written through a
+pointer known to be to main RAM, store two @code{unsigned short} halves
+instead.
+
+This is the default for the DSP (@option{-mdsp}); the GPU does not have
+the bug.  Note that the load before a store through a pointer reads
+the location before storing to it, which matters for a hardware
+register whose read has side effects, if it is reached through a
+pointer; use @option{-mno-fix-dsp-stores} (or assembly) for such code.
+A variable declared @code{extern} must have the @code{local} attribute
+in its declaration too if it is defined with it.
 @end table
 
 @node LM32 Options

@@ -403,6 +403,13 @@ hook_rtx_rtx_null (rtx)
   return NULL;
 }
 
+/* Generic hook that takes a tree and returns a NULL_RTX.  */
+rtx
+hook_rtx_tree_null (tree)
+{
+  return NULL;
+}
+
 /* Generic hook that takes a tree and an int and returns NULL_RTX.  */
 rtx
 hook_rtx_tree_int_null (tree, int)

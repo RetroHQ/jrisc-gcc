@@ -20,6 +20,12 @@
 LIB1ASMSRC = jrisc/lib1funcs.S
 LIB1ASMFUNCS = _udivsi3 _umodsi3 _divsi3 _modsi3
 
+# GCC calls memcpy, memset, memmove and memcmp, and there is no C
+# library: libgcc has them, with a few string functions.  A C library
+# linked before libgcc takes precedence.
+LIB2ADD += $(srcdir)/config/jaguar/string.c
+CFLAGS-string.c = -ffreestanding -fno-builtin -fno-tree-loop-distribute-patterns
+
 crt0.o: $(srcdir)/config/jrisc/crt0.S
 	$(crt_compile) $(CRTSTUFF_T_CFLAGS) -c $<
 

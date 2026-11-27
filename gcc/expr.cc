@@ -770,7 +770,8 @@ convert_mode_scalar (rtx to, rtx from, int unsignedp)
 	     && ! MEM_VOLATILE_P (from)
 	     && direct_load[(int) to_mode]
 	     && ! mode_dependent_address_p (XEXP (from, 0),
-					    MEM_ADDR_SPACE (from)))
+					    MEM_ADDR_SPACE (from))
+	     && targetm.narrow_mem_ok_p (to_mode, from))
 	    || REG_P (from)
 	    || GET_CODE (from) == SUBREG))
 	from = force_reg (from_mode, from);
@@ -944,7 +945,8 @@ convert_modes (machine_mode mode, machine_mode oldmode, rtx x, int unsignedp)
   if (is_int_mode (mode, &int_mode)
       && is_int_mode (oldmode, &int_oldmode)
       && GET_MODE_PRECISION (int_mode) <= GET_MODE_PRECISION (int_oldmode)
-      && ((MEM_P (x) && !MEM_VOLATILE_P (x) && direct_load[(int) int_mode])
+      && ((MEM_P (x) && !MEM_VOLATILE_P (x) && direct_load[(int) int_mode]
+	   && targetm.narrow_mem_ok_p (int_mode, x))
 	  || CONST_POLY_INT_P (x)
           || (REG_P (x)
               && (!HARD_REGISTER_P (x)

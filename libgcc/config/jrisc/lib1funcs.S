@@ -23,7 +23,11 @@
 /* Arguments in r0 and r1, result in r0, return address in r29.  r0-r13
    may be clobbered.  DIV is an unsigned 32/32 division; it needs
    DIVCTRL clear, which crt0 sees to.  The remainder is computed as
-   a - (a / b) * b rather than read from the REMAIN register.  */
+   a - (a / b) * b rather than read from the REMAIN register.
+
+   As for compiled code (GCC's -mfix-hazards), a function returns with
+   no divide or load from main RAM still to write a register: the
+   divides' returns wait for the quotient in the delay slot.  */
 
 #ifdef __JRISC_DSP__
 	.dsp
@@ -55,7 +59,7 @@
 __udivsi3:
 	div	r1,r0
 	jump	t,(r29)
-	nop
+	move	r0,r0		; wait for the quotient
 	.size	__udivsi3,.-__udivsi3
 #endif
 
@@ -83,7 +87,7 @@ __divsi3:
 	nop
 	neg	r0
 1:	jump	t,(r29)
-	nop
+	move	r0,r0		; wait for the quotient
 	.size	__divsi3,.-__divsi3
 #endif
 

@@ -377,6 +377,8 @@ align_local_variable (tree decl, bool really_expand)
       if (mode != BLKmode
 	  && align < GET_MODE_ALIGNMENT (mode))
 	align = GET_MODE_ALIGNMENT (mode);
+      /* The partition gets a stack slot of its own.  */
+      align = STACK_SLOT_ALIGNMENT (type, mode, align);
     }
   else
     align = LOCAL_DECL_ALIGNMENT (decl);
@@ -1847,6 +1849,11 @@ expand_one_ssa_partition (tree var)
 
   if (!use_register_for_decl (var))
     {
+      if (rtx mem = targetm.stack_object_mem (var))
+	{
+	  set_rtl (var, mem);
+	  return;
+	}
       if (defer_stack_allocation (var, true))
 	add_stack_var (var, true);
       else

@@ -1651,6 +1651,46 @@ see @ref{AVR Variable Attributes}.
 
 @end itemize
 
+@subsection Jaguar RISC Named Address Spaces
+@cindex @code{__local} Jaguar RISC Named Address Spaces
+
+On the Atari Jaguar GPU and DSP, the @code{__local} qualifier marks data
+in the processor's local RAM.
+
+A variable qualified with @code{__local} goes in local RAM, as with the
+@code{local} variable attribute (@pxref{Jaguar RISC Variable
+Attributes}); it must have static storage duration.  A pointer to
+@code{__local} data tells GCC that what it points to is in local RAM.
+On the DSP, @option{-mfix-dsp-stores} then neither guards the 32-bit
+stores through it nor splits them into halfwords, as it must for stores
+that may be to main RAM:
+
+@smallexample
+__local unsigned line[160];
+
+void
+draw (__local unsigned *dst)   /* @r{stores need no guard} */
+@{
+  @dots{}
+@}
+
+  draw (line);
+@end smallexample
+
+@code{__local} is a subset of the generic address space: a pointer to
+@code{__local} data converts to an ordinary pointer implicitly, but an
+ordinary pointer converts to a @code{__local} one only with a cast,
+which promises that it points to local RAM.  The pointers are the same,
+so the conversions cost nothing.
+
+Local RAM supports 32-bit accesses only, so, as for the @code{local}
+attribute, @code{__local} data should be accessed a long word at a
+time.
+
+As with other named address spaces, @code{__local} is only recognized
+in the GNU dialects of C (for example @option{-std=gnu99}, the default),
+not in the strict ISO ones such as @option{-std=c99}.
+
 @subsection M32C Named Address Spaces
 @cindex @code{__far} M32C Named Address Spaces
 
@@ -2642,6 +2682,7 @@ GCC plugins may provide their own attributes.
 * Epiphany Function Attributes::
 * H8/300 Function Attributes::
 * IA-64 Function Attributes::
+* Jaguar RISC Function Attributes::
 * M32C Function Attributes::
 * M32R/D Function Attributes::
 * m68k Function Attributes::
@@ -5642,6 +5683,35 @@ extern int foo () __attribute__((version_id ("20040821")));
 Calls to @code{foo} are mapped to calls to @code{foo@{20040821@}}.
 @end table
 
+@node Jaguar RISC Function Attributes
+@subsection Atari Jaguar RISC Function Attributes
+
+The Jaguar's GPU and DSP can only execute code from their small local
+RAM.  When a program does not fit, the linker puts functions in
+overlays, which share space in local RAM and are copied there from
+main RAM as they are called, and calls between them go through stubs
+in the resident code.  These function attributes control where the
+linker puts a function:
+
+@table @code
+@cindex @code{resident} function attribute, Jaguar RISC
+@item resident
+Keep the function resident in local RAM, never in an overlay.  Use this
+for interrupt handlers, which must be resident and must only call
+resident functions, and for functions that are called often from many
+overlays.  The function is put in section @code{.text.resident}.
+
+@cindex @code{overlay} function attribute, Jaguar RISC
+@item overlay (@var{n})
+Put the function in overlay group @var{n}, an integer from 1 to 255,
+with the other functions in the same group, so that calls between them
+do not swap overlays.  The function is put in section
+@code{.text.overlay.@var{n}}.  The group must fit in an overlay region.
+@end table
+
+These attributes conflict with each other and with the @code{section}
+attribute.
+
 @node M32C Function Attributes
 @subsection M32C Function Attributes
 
@@ -7837,6 +7907,7 @@ which syntax you use.  @xref{Attribute Syntax}, for details.
 * Blackfin Variable Attributes::
 * H8/300 Variable Attributes::
 * IA-64 Variable Attributes::
+* Jaguar RISC Variable Attributes::
 * LoongArch Variable Attributes::
 * M32R/D Variable Attributes::
 * Microsoft Windows Variable Attributes::
@@ -8747,6 +8818,20 @@ instruction).  Caveat: such addressing is by definition not position
 independent and hence this attribute must not be used for objects
 defined by shared libraries.
 
+@end table
+
+@node Jaguar RISC Variable Attributes
+@subsection Atari Jaguar RISC Variable Attributes
+
+@table @code
+@cindex @code{local} variable attribute, Jaguar RISC
+@item local
+Put the variable, which must have static storage, in the processor's
+local RAM, which is much faster than main RAM, rather than in main RAM.
+Local RAM can only be accessed a word at a time, so the variable's
+type must not have any parts smaller than a word: no @code{char} or
+@code{short} members or elements, and no bit-fields.  Initialized
+variables go in section @code{.ldata}, others in @code{.lbss}.
 @end table
 
 @node LoongArch Variable Attributes
@@ -16427,6 +16512,7 @@ instructions, but allow the compiler to schedule those calls.
 * Blackfin Built-in Functions::
 * BPF Built-in Functions::
 * FR-V Built-in Functions::
+* Jaguar RISC Built-in Functions::
 * LoongArch Base Built-in Functions::
 * LoongArch SX Vector Intrinsics::
 * LoongArch ASX Vector Intrinsics::
@@ -17982,6 +18068,73 @@ into the data cache.
 Use the @code{nldub} instruction to load the contents of address @var{x}
 into the data cache.  The instruction is issued in slot I1@.
 @end table
+
+@node Jaguar RISC Built-in Functions
+@subsection Jaguar RISC Built-in Functions
+
+These built-in functions give access to the Atari Jaguar GPU's and DSP's
+instructions that C has no operator for.  Those of one processor are an
+error in code compiled for the other (@option{-mgpu} or @option{-mdsp});
+@code{__JRISC_GPU__} or @code{__JRISC_DSP__} tells which it is.
+
+On the GPU:
+
+@defbuiltin{unsigned __builtin_jrisc_pack (unsigned @var{x})}
+@defbuiltinx{unsigned __builtin_jrisc_unpack (unsigned @var{x})}
+@code{PACK} and @code{UNPACK}: a 16-bit CRY pixel to and from its three
+fields spread out, the 4-bit cyan and red at bits 25--22 and 16--13 and
+the 8-bit intensity at bits 7--0, so that one addition or shift works on
+all three fields at once (the bits between catch the carries).  For
+example, @code{__builtin_jrisc_pack ((__builtin_jrisc_unpack (a)
++ __builtin_jrisc_unpack (b)) >> 1)} is the average of pixels @var{a} and
+@var{b}.
+@enddefbuiltin
+
+@defbuiltin{unsigned __builtin_jrisc_sat8 (int @var{x})}
+@defbuiltinx{unsigned __builtin_jrisc_sat16 (int @var{x})}
+@defbuiltinx{unsigned __builtin_jrisc_sat24 (int @var{x})}
+@var{x} clamped to the range 0 to 255, 65535 or 16777215.
+@enddefbuiltin
+
+@defbuiltin{{unsigned long long} __builtin_jrisc_loadp (const void *@var{p})}
+@defbuiltinx{void __builtin_jrisc_storep (void *@var{p}, unsigned long long @var{v})}
+@code{LOADP} and @code{STOREP}: the 64-bit phrase at @var{p}, which must
+be 8-byte aligned and in main RAM, read or written in one bus cycle.  The
+phrase's first long word goes through the @code{G_HIDATA} register, which
+an interrupt handler that uses these instructions must save and restore.
+@enddefbuiltin
+
+On the DSP:
+
+@defbuiltin{int __builtin_jrisc_sat16s (int @var{x})}
+@var{x} clamped to the range @minus{}32768 to 32767.
+@enddefbuiltin
+
+@defbuiltin{unsigned __builtin_jrisc_mirror (unsigned @var{x})}
+@var{x} with its bits in reverse order.
+@enddefbuiltin
+
+@defbuiltin{unsigned __builtin_jrisc_addqmod (unsigned @var{x}, int @var{n})}
+@defbuiltinx{unsigned __builtin_jrisc_subqmod (unsigned @var{x}, int @var{n})}
+@code{ADDQMOD} and @code{SUBQMOD}: @var{x} plus or minus the constant
+@var{n} (1 to 32), keeping the bits of @var{x} that are set in the
+@code{D_MOD} register (at @code{0xf1a118}): an index into a circular
+buffer whose size is a power of two.  Set @code{D_MOD} first.
+@enddefbuiltin
+
+On both:
+
+@defbuiltin{int __builtin_jrisc_normi (unsigned @var{x})}
+@code{NORMI}: the position of the highest set bit of @var{x} less 23,
+or @minus{}32 if @var{x} is 0: the shift that brings @var{x} to a
+24-bit mantissa.
+@enddefbuiltin
+
+@defbuiltin{int __builtin_jrisc_mtoi (int @var{x})}
+@code{MTOI}: the mantissa of the IEEE single-precision number whose bits
+are @var{x}, with its implied leading 1 (bit 23), negated if its sign is
+set.
+@enddefbuiltin
 
 @node LoongArch Base Built-in Functions
 @subsection LoongArch Base Built-in Functions

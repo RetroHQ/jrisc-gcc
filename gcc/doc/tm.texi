@@ -1518,6 +1518,28 @@ registers whenever the function being expanded has any SDmode
 usage.
 @end deftypefn
 
+@deftypefn {Target Hook} rtx TARGET_STACK_OBJECT_MEM (tree @var{obj})
+During expansion into rtl, this hook is called before a stack slot is
+allocated for @var{obj}: either a variable or SSA name, the representative of a
+partition that is not given a register, a parameter that needs a home
+in memory, or the type of a temporary.
+It may return a @code{MEM} of the object's mode for it to use instead,
+or @code{NULL_RTX} for the default.  The default hook returns
+@code{NULL_RTX}.
+@end deftypefn
+
+@deftypefn {Target Hook} bool TARGET_NARROW_MEM_OK_P (machine_mode @var{mode}, const_rtx @var{mem})
+Return true if the value of @var{mem}, a @code{MEM} of an integer mode,
+may be truncated to the narrower integer mode @var{mode} by accessing
+just that part of the memory, or false if the whole value must be
+loaded and then truncated.  This is for targets on which some memory
+can only be accessed in whole words.  LRA also asks it about the stack
+slot of a spilled pseudo narrower than a word, with @var{mode} the
+slot's mode; if it returns false, the slot is accessed as the low part
+of the word that holds it, which must be a word of its own.  The
+default hook returns true.
+@end deftypefn
+
 @deftypefn {Target Hook} void TARGET_INSTANTIATE_DECLS (void)
 This hook allows the backend to perform additional instantiations on rtl
 that are not actually in any insns yet, but will be later.

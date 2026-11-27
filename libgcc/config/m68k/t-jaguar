@@ -1,0 +1,45 @@
+# Target makefile fragment for libgcc on the Atari Jaguar's 68000.
+# Copyright (C) 2026 Free Software Foundation, Inc.
+#
+# This file is part of GCC.
+#
+# GCC is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3, or (at your option)
+# any later version.
+#
+# GCC is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+# License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GCC; see the file COPYING3.  If not see
+# <http://www.gnu.org/licenses/>.
+
+# crt0.o and libjaguar.a, which the driver links into every program
+# (see gcc/config/m68k/m68k-jaguar.h).
+
+JAGUAR_SRC = $(srcdir)/config/m68k/jaguar
+JAGUAR_CFLAGS = -O2 -ffreestanding -fno-builtin \
+		-fno-tree-loop-distribute-patterns \
+		-I$(srcdir)/../gcc/config/m68k
+
+crt0.o: $(JAGUAR_SRC)/crt0.S
+	$(crt_compile) $(CRTSTUFF_T_CFLAGS) -c $<
+
+jaguar-%.o: $(JAGUAR_SRC)/%.c
+	$(gcc_compile) $(JAGUAR_CFLAGS) -c $<
+
+# Shared with the GPU and DSP (config/jrisc/t-jrisc).
+jaguar-string.o: $(srcdir)/config/jaguar/string.c
+	$(gcc_compile) $(JAGUAR_CFLAGS) -c $<
+
+# libgcc adds its own prerequisites to every extra part, so name the
+# members rather than use $^.
+JAGUAR_OBJS = jaguar-core.o jaguar-exit.o jaguar-string.o
+
+libjaguar.a: $(JAGUAR_OBJS)
+	-rm -f $@
+	$(AR) rc $@ $(JAGUAR_OBJS)
+	$(RANLIB) $@

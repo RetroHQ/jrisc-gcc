@@ -22,3 +22,9 @@
 MULTILIB_OPTIONS = mcpu=dsp
 MULTILIB_DIRNAMES = dsp
 MULTILIB_MATCHES = mcpu?dsp=mcpu?jerry mcpu?dsp=mdsp
+
+jrisc-c.o: $(srcdir)/config/jrisc/jrisc-c.cc \
+  $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(TREE_H) $(C_COMMON_H)
+	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
+
+PASSES_EXTRA += $(srcdir)/config/jrisc/jrisc-passes.def

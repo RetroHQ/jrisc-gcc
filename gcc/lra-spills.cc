@@ -408,6 +408,42 @@ assign_stack_slot_num_and_sort_pseudos (int *pseudo_regnos, int n)
    corresponding memory or spilled hard reg.  Ignore spilled pseudos
    created from the scratches.  Return true if the pseudo nrefs equal
    to 0 (don't change the pseudo in this case).  Otherwise return false.  */
+/* *LOC is the stack slot that replaces a spilled pseudo in INSN.  If it
+   is narrower than a word and the target does not allow it to be
+   accessed in its own mode (TARGET_NARROW_MEM_OK_P), replace it with the
+   low part of the word that holds it, which simplify_operand_subreg
+   then reloads a word at a time (with WORD_REGISTER_OPERATIONS).  The
+   slot must be in a word of its own (STACK_SLOT_ALIGNMENT).  In a debug
+   insn, the value is described as that low part of the word, in
+   memory.  */
+static void
+narrow_slot_word (rtx *loc, rtx_insn *insn)
+{
+  rtx mem = *loc;
+  machine_mode mode = GET_MODE (mem);
+  if (!MEM_P (mem)
+      || !known_lt (GET_MODE_SIZE (mode), UNITS_PER_WORD)
+      || !is_a <scalar_int_mode> (mode)
+      || targetm.narrow_mem_ok_p (mode, mem))
+    return;
+
+  rtx addr = XEXP (mem, 0);
+  HOST_WIDE_INT offset = 0;
+  if (GET_CODE (addr) == PLUS && CONST_INT_P (XEXP (addr, 1)))
+    offset = INTVAL (XEXP (addr, 1));
+  else if (!REG_P (addr))
+    return;
+
+  /* The base is word-aligned.  */
+  HOST_WIDE_INT delta = offset & (UNITS_PER_WORD - 1);
+  rtx word = adjust_address_nv (mem, word_mode, -delta);
+  poly_uint64 low = subreg_lowpart_offset (mode, word_mode);
+  if (DEBUG_INSN_P (insn))
+    *loc = adjust_address_nv (word, mode, low);
+  else
+    *loc = gen_rtx_SUBREG (mode, word, low);
+}
+
 static bool
 remove_pseudos (rtx *loc, rtx_insn *insn)
 {
@@ -425,7 +461,18 @@ remove_pseudos (rtx *loc, rtx_insn *insn)
       /* Try to remove memory subregs to simplify LRA job
          and avoid LRA cycling in case of subreg memory reload.  */
       res = remove_pseudos (&SUBREG_REG (*loc), insn);
-      if (GET_CODE (SUBREG_REG (*loc)) == MEM)
+      if (GET_CODE (SUBREG_REG (*loc)) == SUBREG)
+	{
+	  /* A narrow pseudo replaced by a part of its slot's word (see
+	     narrow_slot_word): fold the two subregs.  */
+	  rtx inner = SUBREG_REG (*loc);
+	  rtx x = simplify_gen_subreg (GET_MODE (*loc), inner,
+				       GET_MODE (inner), SUBREG_BYTE (*loc));
+	  gcc_assert (x != NULL_RTX);
+	  *loc = x;
+	  lra_update_insn_recog_data (insn);
+	}
+      else if (GET_CODE (SUBREG_REG (*loc)) == MEM)
 	{
 	  alter_subreg (loc, false);
 	  if (GET_CODE (*loc) == MEM)
@@ -461,6 +508,7 @@ remove_pseudos (rtx *loc, rtx_insn *insn)
 					GET_MODE (pseudo_slots[i].mem),
 					false, false, 0, true);
 	  *loc = x != pseudo_slots[i].mem ? x : copy_rtx (x);
+	  narrow_slot_word (loc, insn);
 	}
       return res;
     }

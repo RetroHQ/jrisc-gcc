@@ -1295,6 +1295,10 @@ pattern needs to support both a 32- and a 64-bit mode.
 
 @hook TARGET_EXPAND_TO_RTL_HOOK
 
+@hook TARGET_STACK_OBJECT_MEM
+
+@hook TARGET_NARROW_MEM_OK_P
+
 @hook TARGET_INSTANTIATE_DECLS
 
 @hook TARGET_MANGLE_TYPE

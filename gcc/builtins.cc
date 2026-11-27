@@ -1713,6 +1713,13 @@ expand_builtin_apply (rtx function, rtx arguments, rtx argsize)
   if (SUPPORTS_STACK_ALIGNMENT)
     crtl->need_drap = true;
 
+  /* If the dynamic allocation does not move the stack pointer (the space
+     comes from another stack), the outgoing argument area must be big
+     enough.  */
+  if (ACCUMULATE_OUTGOING_ARGS && CONST_INT_P (argsize))
+    crtl->outgoing_args_size = upper_bound (crtl->outgoing_args_size,
+					    INTVAL (argsize));
+
   dest = virtual_outgoing_args_rtx;
   if (!STACK_GROWS_DOWNWARD)
     {

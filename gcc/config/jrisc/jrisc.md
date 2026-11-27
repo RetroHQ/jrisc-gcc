@@ -33,10 +33,16 @@
    (SP_REG	15)
    (TEMP_REG	28)
    (LR_REG	29)
+   (DRAM_SP_REG	27)
    (CC_REG	34)])
 
 (define_c_enum "unspecv"
-  [UNSPECV_BLOCKAGE])
+  [UNSPECV_BLOCKAGE UNSPECV_WAIT])
+
+(define_c_enum "unspec"
+  [UNSPEC_PACK UNSPEC_UNPACK UNSPEC_SAT8 UNSPEC_SAT16 UNSPEC_SAT24
+   UNSPEC_SAT16S UNSPEC_MIRROR UNSPEC_NORMI UNSPEC_MTOI
+   UNSPEC_ADDQMOD UNSPEC_SUBQMOD UNSPEC_LOADP UNSPEC_STOREP])
 
 ;; ---------------------------------------------------------------------
 ;; Attributes
@@ -59,8 +65,17 @@
   (symbol_ref "(jrisc_empty_delay_slot_p (insn)
 		? EMPTY_DELAY_SLOT_TRUE : EMPTY_DELAY_SLOT_FALSE)"))
 
-(define_delay (eq_attr "type" "branch,jump,return")
+;; A return's delay slot executes after the jump, where the hazard pass
+;; (jrisc_hazards) can no longer wait for what it leaves pending: it may
+;; not start a divide or a load from main RAM, except a load of the
+;; return value.
+(define_delay (eq_attr "type" "branch,jump")
   [(eq_attr "slottable" "yes") (nil) (nil)])
+
+(define_delay (eq_attr "type" "return")
+  [(and (eq_attr "slottable" "yes")
+	(match_test "jrisc_return_slot_ok_p (insn)"))
+   (nil) (nil)])
 
 (include "predicates.md")
 (include "constraints.md")
@@ -129,23 +144,63 @@
 ;; ---------------------------------------------------------------------
 ;; Extensions
 
-(define_insn "zero_extend<mode>si2"
+;; Extending the low part of an SImode register is done on the whole
+;; register, so that there is no QImode or HImode subreg, which LRA could
+;; reload from part of a spill slot: a narrow access that local RAM does
+;; not support.  Such extensions that combine or lower-subreg make are
+;; split before register allocation.
+
+(define_expand "zero_extend<mode>si2"
+  [(parallel [(set (match_operand:SI 0 "register_operand")
+		   (zero_extend:SI
+		     (match_operand:QHI 1 "nonimmediate_operand")))
+	      (clobber (reg:CC CC_REG))])]
+  ""
+{
+  if (jrisc_expand_extend (operands, <MODE>mode, false))
+    DONE;
+})
+
+(define_expand "extend<mode>si2"
+  [(parallel [(set (match_operand:SI 0 "register_operand")
+		   (sign_extend:SI
+		     (match_operand:QHI 1 "nonimmediate_operand")))
+	      (clobber (reg:CC CC_REG))])]
+  ""
+{
+  if (jrisc_expand_extend (operands, <MODE>mode, true))
+    DONE;
+})
+
+(define_insn_and_split "*zero_extend<mode>si2"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(zero_extend:SI
 	  (match_operand:QHI 1 "nonimmediate_operand" "0,m")))
    (clobber (reg:CC CC_REG))]
   ""
   "* return jrisc_output_extend (operands, <MODE>mode, false);"
+  "&& can_create_pseudo_p () && jrisc_word_lowpart_p (operands[1])"
+  [(const_int 0)]
+{
+  jrisc_expand_extend (operands, <MODE>mode, false);
+  DONE;
+}
   [(set_attr "type" "multi,load")
    (set (attr "length") (symbol_ref "jrisc_insn_length (insn)"))])
 
-(define_insn "extend<mode>si2"
+(define_insn_and_split "*extend<mode>si2"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(sign_extend:SI
 	  (match_operand:QHI 1 "nonimmediate_operand" "0,m")))
    (clobber (reg:CC CC_REG))]
   ""
   "* return jrisc_output_extend (operands, <MODE>mode, true);"
+  "&& can_create_pseudo_p () && jrisc_word_lowpart_p (operands[1])"
+  [(const_int 0)]
+{
+  jrisc_expand_extend (operands, <MODE>mode, true);
+  DONE;
+}
   [(set_attr "type" "multi")
    (set (attr "length") (symbol_ref "jrisc_insn_length (insn)"))])
 
@@ -210,20 +265,52 @@
   ""
   "abs\t%0")
 
-;; MULT and IMULT multiply the low 16 bits of two registers.
-(define_insn "umulhisi3"
+;; MULT and IMULT multiply the low 16 bits of two registers.  The insns
+;; take SImode registers, so that there are no HImode subregs, which LRA
+;; could reload from the low half of a spill slot: a halfword access
+;; that local RAM does not support.
+
+(define_expand "umulhisi3"
+  [(set (match_operand:SI 0 "register_operand")
+	(mult:SI (zero_extend:SI (match_operand:HI 1 "register_operand"))
+		 (zero_extend:SI (match_operand:HI 2 "register_operand"))))]
+  ""
+{
+  emit_insn (gen_jrisc_umul16 (operands[0],
+			       jrisc_word_reg (operands[1]),
+			       jrisc_word_reg (operands[2])));
+  DONE;
+})
+
+(define_expand "mulhisi3"
+  [(set (match_operand:SI 0 "register_operand")
+	(mult:SI (sign_extend:SI (match_operand:HI 1 "register_operand"))
+		 (sign_extend:SI (match_operand:HI 2 "register_operand"))))]
+  ""
+{
+  emit_insn (gen_jrisc_smul16 (operands[0],
+			       jrisc_word_reg (operands[1]),
+			       jrisc_word_reg (operands[2])));
+  DONE;
+})
+
+(define_insn "jrisc_umul16"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(mult:SI (zero_extend:SI (match_operand:HI 1 "register_operand" "%0"))
-		 (zero_extend:SI (match_operand:HI 2 "register_operand" "r"))))
+	(mult:SI (and:SI (match_operand:SI 1 "register_operand" "%0")
+			 (const_int 65535))
+		 (and:SI (match_operand:SI 2 "register_operand" "r")
+			 (const_int 65535))))
    (clobber (reg:CC CC_REG))]
   ""
   "mult\t%2,%0"
   [(set_attr "type" "mul")])
 
-(define_insn "mulhisi3"
+(define_insn "jrisc_smul16"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(mult:SI (sign_extend:SI (match_operand:HI 1 "register_operand" "%0"))
-		 (sign_extend:SI (match_operand:HI 2 "register_operand" "r"))))
+	(mult:SI (sign_extend:SI
+		   (truncate:HI (match_operand:SI 1 "register_operand" "%0")))
+		 (sign_extend:SI
+		   (truncate:HI (match_operand:SI 2 "register_operand" "r")))))
    (clobber (reg:CC CC_REG))]
   ""
   "imult\t%2,%0"
@@ -710,9 +797,175 @@
   "nop"
   [(set_attr "type" "nop")])
 
+;; Wait for a register that a divide or a load from main RAM has still to
+;; write: MOVE reads it, so it waits, and then rewrites it unchanged
+;; (and leaves the flags alone).  Inserted by the hazard pass
+;; (jrisc_hazards).
+(define_insn "jrisc_wait"
+  [(unspec_volatile [(match_operand:SI 0 "register_operand" "r")]
+		    UNSPECV_WAIT)]
+  ""
+  "move\t%0,%0"
+  [(set_attr "type" "move")])
+
 (define_insn "blockage"
   [(unspec_volatile [(const_int 0)] UNSPECV_BLOCKAGE)]
   ""
   ""
   [(set_attr "length" "0")
    (set_attr "type" "multi")])
+;; ---------------------------------------------------------------------
+;; The main RAM stack (r27), which alloca uses; see jrisc.h.  The r15
+;; stack only moves in the prologue and epilogue.
+
+(define_expand "allocate_stack"
+  [(match_operand:SI 0 "register_operand")
+   (match_operand:SI 1 "general_operand")]
+  ""
+{
+  rtx sp = gen_rtx_REG (SImode, DRAM_SP_REG);
+
+  emit_insn (gen_subsi3 (sp, sp, force_reg (SImode, operands[1])));
+  /* Keep the stack pointer word aligned.  */
+  emit_insn (gen_lshrsi3 (sp, sp, GEN_INT (2)));
+  emit_insn (gen_ashlsi3 (sp, sp, GEN_INT (2)));
+  emit_move_insn (operands[0], sp);
+  DONE;
+})
+
+(define_expand "save_stack_block"
+  [(match_operand:SI 0 "register_operand")
+   (match_operand:SI 1 "register_operand")]
+  ""
+{
+  emit_move_insn (operands[0], gen_rtx_REG (SImode, DRAM_SP_REG));
+  DONE;
+})
+
+(define_expand "restore_stack_block"
+  [(match_operand:SI 0 "register_operand")
+   (match_operand:SI 1 "register_operand")]
+  ""
+{
+  emit_move_insn (gen_rtx_REG (SImode, DRAM_SP_REG), operands[1]);
+  DONE;
+})
+
+;; __builtin_setjmp and nonlocal gotos: r15, then r27.
+
+(define_expand "save_stack_nonlocal"
+  [(match_operand:DI 0 "memory_operand")
+   (match_operand:SI 1 "register_operand")]
+  ""
+{
+  emit_move_insn (adjust_address (operands[0], SImode, 0), operands[1]);
+  emit_move_insn (adjust_address (operands[0], SImode, 4),
+		  gen_rtx_REG (SImode, DRAM_SP_REG));
+  DONE;
+})
+
+(define_expand "restore_stack_nonlocal"
+  [(match_operand:SI 0 "register_operand")
+   (match_operand:DI 1 "memory_operand")]
+  ""
+{
+  emit_move_insn (gen_rtx_REG (SImode, DRAM_SP_REG),
+		  adjust_address (operands[1], SImode, 4));
+  emit_move_insn (operands[0], adjust_address (operands[1], SImode, 0));
+  DONE;
+})
+;; ---------------------------------------------------------------------
+;; Block moves and sets of word-aligned objects, a word at a time, so
+;; that they work in local RAM.
+
+(define_expand "cpymemsi"
+  [(match_operand:BLK 0 "memory_operand")
+   (match_operand:BLK 1 "memory_operand")
+   (match_operand:SI 2 "general_operand")
+   (match_operand:SI 3 "const_int_operand")]
+  ""
+{
+  if (jrisc_expand_block_op (operands[0], operands[1], operands[2],
+			     NULL_RTX, operands[3]))
+    DONE;
+  FAIL;
+})
+
+(define_expand "setmemsi"
+  [(match_operand:BLK 0 "memory_operand")
+   (match_operand:SI 1 "general_operand")
+   (match_operand:QI 2 "nonmemory_operand")
+   (match_operand:SI 3 "const_int_operand")]
+  ""
+{
+  if (jrisc_expand_block_op (operands[0], NULL_RTX, operands[1],
+			     operands[2], operands[3]))
+    DONE;
+  FAIL;
+})
+;; ---------------------------------------------------------------------
+;; Instructions for the __builtin_jrisc_* functions (see jrisc.cc).
+
+(define_int_iterator GPU_UNARY [UNSPEC_PACK UNSPEC_UNPACK UNSPEC_SAT8
+				UNSPEC_SAT16 UNSPEC_SAT24])
+(define_int_iterator DSP_UNARY [UNSPEC_SAT16S UNSPEC_MIRROR])
+(define_int_iterator BOTH_BINARY [UNSPEC_NORMI UNSPEC_MTOI])
+(define_int_iterator DSP_MOD [UNSPEC_ADDQMOD UNSPEC_SUBQMOD])
+(define_int_attr insn [(UNSPEC_PACK "pack") (UNSPEC_UNPACK "unpack")
+		       (UNSPEC_SAT8 "sat8") (UNSPEC_SAT16 "sat16")
+		       (UNSPEC_SAT24 "sat24") (UNSPEC_SAT16S "sat16s")
+		       (UNSPEC_MIRROR "mirror") (UNSPEC_NORMI "normi")
+		       (UNSPEC_MTOI "mtoi") (UNSPEC_ADDQMOD "addqmod")
+		       (UNSPEC_SUBQMOD "subqmod")])
+
+;; One register, read and written.
+(define_insn "jrisc_<insn>"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec:SI [(match_operand:SI 1 "register_operand" "0")] GPU_UNARY))
+   (clobber (reg:CC CC_REG))]
+  "TARGET_GPU"
+  "<insn>\t%0")
+
+(define_insn "jrisc_<insn>"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec:SI [(match_operand:SI 1 "register_operand" "0")] DSP_UNARY))
+   (clobber (reg:CC CC_REG))]
+  "!TARGET_GPU"
+  "<insn>\t%0")
+
+(define_insn "jrisc_<insn>"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec:SI [(match_operand:SI 1 "register_operand" "r")] BOTH_BINARY))
+   (clobber (reg:CC CC_REG))]
+  ""
+  "<insn>\t%1,%0")
+
+;; ADDQMOD and SUBQMOD keep the bits that D_MOD sets.
+(define_insn "jrisc_<insn>"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec:SI [(match_operand:SI 1 "register_operand" "0")
+		    (match_operand:SI 2 "const_int_operand" "n")] DSP_MOD))
+   (clobber (reg:CC CC_REG))]
+  "!TARGET_GPU"
+  "<insn>\t#%c2,%0")
+
+;; A phrase (8 bytes, phrase aligned) to or from a register pair: the
+;; register's long word is the phrase's second, G_HIDATA has the first.
+;; LOADP's register is waited for before G_HIDATA is read.
+(define_insn "jrisc_loadp"
+  [(set (match_operand:DI 0 "register_operand" "=r")
+	(unspec:DI [(mem:DI (match_operand:SI 1 "register_operand" "r"))]
+		   UNSPEC_LOADP))]
+  "TARGET_GPU"
+  "* return jrisc_output_phrase (operands, true);"
+  [(set_attr "type" "multi")
+   (set_attr "length" "12")])
+
+(define_insn "jrisc_storep"
+  [(set (mem:DI (match_operand:SI 0 "register_operand" "r"))
+	(unspec:DI [(match_operand:DI 1 "register_operand" "r")]
+		   UNSPEC_STOREP))]
+  "TARGET_GPU"
+  "* return jrisc_output_phrase (operands, false);"
+  [(set_attr "type" "multi")
+   (set_attr "length" "10")])

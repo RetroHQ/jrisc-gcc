@@ -799,6 +799,11 @@ assign_stack_temp_for_type (machine_mode mode, poly_int64 size, tree type)
 
   gcc_assert (known_size_p (size));
 
+  /* The target may put the temporary somewhere else.  */
+  if (type != NULL_TREE && !virtuals_instantiated)
+    if (rtx mem = targetm.stack_object_mem (type))
+      return GET_MODE (mem) == mode ? mem : adjust_address (mem, mode, 0);
+
   align = get_stack_local_alignment (type, mode);
 
   /* Try to find an available, already-allocated temporary of the proper
@@ -3362,6 +3367,9 @@ assign_parm_setup_reg (struct assign_parm_data_all *all, tree parm,
 	  parmreg = gen_reg_rtx (TYPE_MODE (TREE_TYPE (parm)));
 	  mark_user_reg (parmreg);
 	}
+      /* The target may put the slot somewhere else.  */
+      else if (rtx mem = targetm.stack_object_mem (parm))
+	parmreg = mem;
       else
 	{
 	  int align = STACK_SLOT_ALIGNMENT (TREE_TYPE (parm),
@@ -3729,7 +3737,12 @@ assign_parms (tree fndecl)
       else if (data.arg.pass_by_reference || use_register_for_decl (parm))
 	assign_parm_setup_reg (&all, parm, &data);
       else
-	assign_parm_setup_stack (&all, parm, &data);
+	{
+	  /* The target may put the parameter's home somewhere else.  */
+	  if (rtx mem = targetm.stack_object_mem (parm))
+	    data.stack_parm = mem;
+	  assign_parm_setup_stack (&all, parm, &data);
+	}
 
       if (cfun->stdarg && !DECL_CHAIN (parm))
 	assign_parms_setup_varargs (&all, &data, false);

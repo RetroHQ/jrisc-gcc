@@ -1026,6 +1026,10 @@ m32r-*-elf*)
 m32rle-*-elf*)
 	tmake_file=t-fdpbit
 	;;
+m68k-jaguar-elf*)
+	tmake_file="$tmake_file m68k/t-floatlib m68k/t-jaguar"
+	extra_parts="crt0.o libjaguar.a"
+	;;
 m68k-*-elf* | fido-*-elf)
 	tmake_file="$tmake_file m68k/t-floatlib"
 	;;

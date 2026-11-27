@@ -6127,6 +6127,35 @@ usage.",
  void, (void),
  hook_void_void)
 
+/* Whether a MEM may be narrowed when converting it to a narrower
+   integer mode.  */
+DEFHOOK
+(narrow_mem_ok_p,
+ "Return true if the value of @var{mem}, a @code{MEM} of an integer mode,\n\
+may be truncated to the narrower integer mode @var{mode} by accessing\n\
+just that part of the memory, or false if the whole value must be\n\
+loaded and then truncated.  This is for targets on which some memory\n\
+can only be accessed in whole words.  LRA also asks it about the stack\n\
+slot of a spilled pseudo narrower than a word, with @var{mode} the\n\
+slot's mode; if it returns false, the slot is accessed as the low part\n\
+of the word that holds it, which must be a word of its own.  The\n\
+default hook returns true.",
+ bool, (machine_mode mode, const_rtx mem),
+ hook_bool_mode_const_rtx_true)
+
+/* Lets the target place objects that would go in the stack frame.  */
+DEFHOOK
+(stack_object_mem,
+ "During expansion into rtl, this hook is called before a stack slot is\n\
+allocated for @var{obj}: either a variable or SSA name, the representative of a\n\
+partition that is not given a register, a parameter that needs a home\n\
+in memory, or the type of a temporary.\n\
+It may return a @code{MEM} of the object's mode for it to use instead,\n\
+or @code{NULL_RTX} for the default.  The default hook returns\n\
+@code{NULL_RTX}.",
+ rtx, (tree obj),
+ hook_rtx_tree_null)
+
 /* This target hook allows the backend to perform additional
    instantiations on rtx that are not actually in insns yet,
    but will be later.  */

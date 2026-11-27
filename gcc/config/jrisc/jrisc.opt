@@ -48,3 +48,19 @@ Generate code for the TOM GPU.
 mdsp
 Target RejectNegative Alias(mcpu=, dsp)
 Generate code for the JERRY DSP.
+
+mjaguar-object
+Target RejectNegative
+Link the program as a 68000 object, to be linked with the 68000 code of a Jaguar program.
+
+mfix-hazards
+Target Var(jrisc_fix_hazards) Init(1)
+Wait for a pending divide or load from main RAM before an instruction that the pipeline does not make wait for it (TOM bugs 2, 13 and 25).
+
+mfix-dsp-stores
+Target Var(jrisc_fix_dsp_stores) Init(-1)
+Work around the DSP bug that corrupts a store to main RAM not preceded by a completed load from it (on by default for the DSP).
+
+mlocal-frame-limit=
+Target RejectNegative Joined UInteger Var(jrisc_local_frame_limit) Init(64)
+-mlocal-frame-limit=N	Keep locals of up to N bytes on the stack in local RAM; put larger ones in main RAM.

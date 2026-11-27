@@ -6444,7 +6444,14 @@ simplify_context::simplify_relational_operation_1 (rtx_code code,
      A != B ==  A ^ B
 
      simplify_logical_relational_operation checks whether A and B
-     are booleans.  */
+     are booleans.
+
+     These are for true being 1.  When it is -1, true is less than
+     false in a signed comparison, so A > B is then B > A as booleans
+     (and so on).  */
+  if (STORE_FLAG_VALUE == -1
+      && (code == GT || code == GE || code == LT || code == LE))
+    code = swap_condition (code);
   if (code == GTU || code == GT)
     return simplify_logical_relational_operation (AND, mode, op1, op0, true);
   if (code == GEU || code == GE)
